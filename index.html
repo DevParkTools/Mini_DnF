@@ -373,6 +373,22 @@ function readMove(){
  if(keys.ArrowUp||(wz&&keys.KeyW))y-=1;
  if(keys.ArrowDown||(wz&&keys.KeyS))y+=1;
  if(stk.on){x+=stk.x;y+=stk.y;}
+ if(npcGo){
+  if(x!==0||y!==0||mode!=='town'||!playing())npcGo=null;
+  else{
+   const n=npcGo,ddx=n.x-P.x,ddy=n.y-P.y;
+   if(Math.abs(ddx)<70&&Math.abs(ddy)<35){npcGo=null;talk(n);}
+   else{const dm=Math.hypot(ddx,ddy);x=ddx/dm;y=ddy/dm;}
+  }
+ }
+ if(goTo){
+  if(x!==0||y!==0||(mode!=='town'&&mode!=='dungeon')||!playing()||++goTo.t>300)goTo=null;
+  else{
+   const gdx=goTo.x-P.x,gdy=goTo.y-P.y;
+   if(Math.abs(gdx)<10&&Math.abs(gdy)<8)goTo=null;
+   else{const gm=Math.hypot(gdx,gdy);x=gdx/gm;y=gdy/gm;}
+  }
+ }
  const m=Math.hypot(x,y);
  if(m>1){x/=m;y/=m;}
  MV.x=x;MV.y=y;
@@ -384,7 +400,7 @@ function stickMove(px,py){
  stk.kx=dx;stk.ky=dy;
  if(Math.hypot(dx,dy)/R<0.2){stk.x=0;stk.y=0;}else{stk.x=dx/R;stk.y=dy/R;}
 }
-let invUI=null,shopUI=null;
+let invUI=null,shopUI=null,npcGo=null,tapN=null,goTo=null,tapG=null;
 function playing(){return(mode==='town'||mode==='dungeon')&&!dlg&&!menu&&!invUI&&!shopUI;}
 function titleOY(){return(mode==='title'&&portrait)?(H-VH*S)/2:OY;}
 
@@ -399,13 +415,24 @@ cv.addEventListener('pointerdown',e=>{
  }
  if(!playing())return;
  try{cv.setPointerCapture(e.pointerId);}catch(_){}
+ let npcHit=null;
+ if(mode==='town'){
+  const tx=gx+camX;
+  for(const n of NPCS){
+   if(Math.abs(tx-n.x)<55*n.sc&&gy>n.y-130*n.sc&&gy<n.y+24){npcHit=n;break;}
+  }
+  tapN=npcHit?{id:e.pointerId,x:e.clientX,y:e.clientY,n:npcHit}:null;
+  tapG=npcHit?null:{id:e.pointerId,x:e.clientX,y:e.clientY,wx:tx,wy:gy};
+ }
+ else if(mode==='dungeon')tapG={id:e.pointerId,x:e.clientX,y:e.clientY,wx:gx+camX,wy:gy};
  for(const k in BTN){
   const b=BTN[k];
+  if(!touchUI)break;
   if(k==='talk'&&!(mode==='town'&&nearNpc()))continue;
   if(k==='dash'&&mode==='town'&&nearNpc())continue;
-  if(Math.hypot(e.clientX-b.x,e.clientY-b.y)<=b.rr*1.15){press(k);b.down=e.pointerId;return;}
+  if(Math.hypot(e.clientX-b.x,e.clientY-b.y)<=b.rr*(npcHit?1:1.15)){tapN=null;tapG=null;press(k);b.down=e.pointerId;return;}
  }
- if(e.clientX<W*0.55&&!stk.on&&(!portrait||e.clientY>VH*S)){
+ if(touchUI&&e.clientX<W*0.55&&!stk.on&&(!portrait||e.clientY>VH*S)){
   stk.on=true;stk.id=e.pointerId;
   stk.cx=clamp(e.clientX,stk.rad+8,W-stk.rad-8);
   stk.cy=clamp(e.clientY,stk.rad+8,H-stk.rad-8);
@@ -416,6 +443,19 @@ cv.addEventListener('pointermove',e=>{
  if(stk.on&&e.pointerId===stk.id){e.preventDefault();stickMove(e.clientX,e.clientY);}
 },{passive:false});
 function pointerEnd(e){
+ if(tapG&&tapG.id===e.pointerId){
+  const g=tapG;tapG=null;
+  if(e.type==='pointerup'&&(mode==='town'||mode==='dungeon')&&playing()&&Math.hypot(e.clientX-g.x,e.clientY-g.y)<14){
+   goTo={x:clamp(g.wx,40,(mode==='town'?TOWN_W:ROOM_W)-40),y:clamp(g.wy,LANE_T+20,LANE_B-20),t:0};npcGo=null;
+   ringFx(goTo.x,goTo.y,4,20,14,'#fff2c0',3);
+  }
+ }
+ if(tapN&&tapN.id===e.pointerId){
+  const t=tapN;tapN=null;
+  if(e.type==='pointerup'&&mode==='town'&&playing()&&Math.hypot(e.clientX-t.x,e.clientY-t.y)<14){
+   if(nearNpc()===t.n)talk(t.n);else{npcGo=t.n;goTo=null;}
+  }
+ }
  if(e.pointerId===stk.id){stk.on=false;stk.id=-1;stk.x=0;stk.y=0;stk.kx=0;stk.ky=0;}
  for(const k in BTN)if(BTN[k].down===e.pointerId)BTN[k].down=-1;
 }
@@ -3006,6 +3046,28 @@ function pbar(x,y,w,h,f,c,cl,cd){
   lx.fillStyle=cd;lx.fillRect(x,y+h-1,fw,1);
  }
 }
+let hudFat='',hudFatV=-1;
+function drawFat(){
+ if(save.fat!==hudFatV){hudFatV=save.fat;hudFat='피로도 '+save.fat+'/100';}
+ let w,y;
+ if(touchUI){
+  if(portrait){
+   let top=1e9;
+   for(const k in BTN){const b=BTN[k];if(b.y-b.rr<top)top=b.y-b.rr;}
+   w=Math.min(LW-24,260);y=Math.min(LH-14,Math.round((top-OY)/(S*PXK))-16);
+  }else{w=Math.min(150,LW-120);y=LH-14;}
+ }
+ else{
+  const n=save.cls?7:5,ew=n*28+(n-1)*4+10;
+  w=LW<364?Math.min(ew,LW-100):ew;
+  y=LH-36-8-5-14;
+ }
+ const x=(LW-w)>>1,f=clamp(save.fat/100,0,1);
+ if(f>0.5)pbar(x,y,w,10,f,'#4fc24a','#8ff08a','#2e8a34');
+ else if(f>0.2)pbar(x,y,w,10,f,'#e0c34a','#fff0a0','#8a7420');
+ else pbar(x,y,w,10,f,'#d84a4a','#ff8a8a','#8a2a2a');
+ ptx(hudFat,x+(w>>1),y+8,'#ffffff','center',1,false,true);
+}
 let hudHp='',hudMp='',hudHpV=-1,hudMpV=-1,hudQ=[],hudQT=-99,hudGold='',hudGoldV=-1;
 function drawHUDPx(){
  const hpv=Math.ceil(P.hp),mpv=Math.floor(P.mp);
@@ -3028,7 +3090,7 @@ function drawHUDPx(){
  }else drawPcBar();
  if(save.gold!==hudGoldV){hudGoldV=save.gold;hudGold=save.gold+' G';}
  ptx(hudGold,LW-8,52,'#ffe27a','right',1,false,true);
- if(mode==='town'){fatTick();ptx('피로도 '+save.fat+'/100',LW-8,64,'#9fe0ff','right',1,false,true);}
+ if(mode==='town'){fatTick();drawFat();}
  const pbx=LW-30,qbx=LW-60;
  uiRects.push({x:pbx*PXK,y:5*PXK,w:26*PXK,h:26*PXK,f:openPause});
  uiRects.push({x:qbx*PXK,y:5*PXK,w:26*PXK,h:26*PXK,f:openQuestLog_});
@@ -3197,6 +3259,9 @@ function porb(cx,cy,r,f,c,cl,cd,txt){
 const PCS_N=7;
 const PCS_K=[['U','I','O','Y','H'],['Z','S','D','F','G']];
 const PCS_A=[['U',0],['I',1],['O',2],['Q','p'],['R','m']],PCS_B=[['U',0],['I',1],['O',2],['Y',3],['H',4],['Q','p'],['R','m']];
+const pcPress=k=>()=>{if(playing())press(k);};
+const PCS_FA=[pcPress('s0'),pcPress('s1'),pcPress('s2'),pcPress('pot'),pcPress('mpot')];
+const PCS_FB=[pcPress('s0'),pcPress('s1'),pcPress('s2'),pcPress('s3'),pcPress('s4'),pcPress('pot'),pcPress('mpot')];
 function drawPcBar(){
  const nw=LW<364,by=nw?LH-72:LH-22;
  porb(30,by,17,P.hp/P.maxHp,'#d84a4a','#ff9a9a','#8a2a2a',hudHp);
@@ -3204,11 +3269,13 @@ function drawPcBar(){
  if(nw)ptx('Lv '+save.lv,LW>>1,by+6,'#ffe27a','center',1,false,true);
  else ptx('Lv '+save.lv,52,by+6,'#ffe27a','left',1,false,true);
  const PCS=save.cls?PCS_B:PCS_A;
+ const PCS_F=save.cls?PCS_FB:PCS_FA;
  const sw=28,sh=36,gap=4,n=PCS.length,tw=n*sw+(n-1)*gap,x0=(LW-tw)>>1,y0=LH-sh-8;
  pPanel(x0-5,y0-5,tw+10,sh+10,'#0e1426','#6f84c8');
  for(let i=0;i<n;i++){
   const x=x0+i*(sw+gap),k=PCS[i][1];
   nrect('#0c0814',x,y0,sw,sh);nrect('#1c2548',x+1,y0+1,sw-2,sh-2);
+  uiRects.push({x:x*PXK,y:y0*PXK,w:sw*PXK,h:sh*PXK,f:PCS_F[i]});
   let ic='#9fd0ff',fr=0,dim=false,sub='',nm='';
   if(typeof k==='number'){
    const s=skDef(k);nm=skName(k);
