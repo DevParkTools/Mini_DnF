@@ -907,7 +907,7 @@ function arcFx(o,idx,sc,col){
 function txt(x,y,z,s,c,size){TX.push({x,y,z,vz:2.2,life:40,max:40,s,c,size});}
 function drop(k,x,y,amt){DR.push({isDrop:true,k,x,y,z:10,vx:rnd(-2,2),vy:rnd(-1,1),vz:rnd(4,7),t:0,amt:amt||1});}
 
-function hittable(e){return e.st!=='dead'&&e.st!=='down'&&!e.dying&&e.inv<=0;}
+function hittable(e){return e.st!=='dead'&&!e.dying&&e.inv<=0;}
 function strikeEnemies(p,reach,depth,back,mul,o){
  let n=0;
  for(let i=0;i<E.length;i++){
@@ -917,6 +917,7 @@ function strikeEnemies(p,reach,depth,back,mul,o){
   if(dx<-back-e.r||dx>reach+e.r)continue;
   if(Math.abs(e.y-p.y)>depth)continue;
   if(Math.abs(e.z-p.z)>100)continue;
+  if(e.st==='down'&&p.z>24)continue;
   e.aidP=p.aid;
   hurtEnemy(e,mul,o,p.x);
   n++;
@@ -942,6 +943,7 @@ function hurtEnemy(e,mul,o,fx){
  if(o.shk&&Math.random()<o.shk)e.shk=o.sd||180;
  if(o.bld&&Math.random()<o.bld){e.bld=300;e.bs=Math.min(5,(e.bs||0)+1);}
  if(e.armor&&(e.boss||!(o.launch>=12))){e.x+=dir*1.2;return;}
+ if(e.st==='down'&&!(o.launch>0)){e.stT=Math.max(e.stT,24);return;}
  if(o.launch>0||e.st==='air'){
   if(e.st==='air'){e.vz=o.launch>=11?Math.max(e.vz,o.launch*0.8):Math.max(e.vz,e.jug>12?2.5:Math.max(4.5,7.5-e.jug*0.5));e.vx=dir*(o.kx||2)*0.5;e.jug++;}
   else{e.st='air';e.vz=o.launch||8;e.vx=dir*(o.kx||2);e.jug=1;e.bounced=false;}
@@ -1572,7 +1574,7 @@ function updProj(){
     q.x+=q.vx;
     for(let j=0;j<E.length;j++){
      const e=E[j];
-     if(!hittable(e)||q.hits.indexOf(e)>=0)continue;
+     if(!hittable(e)||q.hits.indexOf(e)>=0||(e.st==='down'&&q.z>24))continue;
      if(Math.abs(e.x-q.x)<e.r+22&&Math.abs(e.y-q.y)<36&&Math.abs(e.z-q.z+20)<90){
       q.hits.push(e);
       hurtEnemy(e,q.mul,{kx:3,launch:0,stun:14,hs:3,sh:2},q.x-q.dir*40);
